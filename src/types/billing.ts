@@ -42,7 +42,29 @@ export interface UsageEvent {
   reasoningTokens: number;
   outputTokens: number;
   totakTokens: number;
-  constMicroCents: number;
+  costMicroCents: number;
   responsePayload: Record<string, unknown>;
   recordedAt: Date;
+}
+export interface PeriodUsageSummary {
+  totalApiCalls: number;
+  totalInputTokens: number;
+  totalCachedInputTokens: number;
+  totalReasoningTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  totalCostMicroCents: number;
+}
+export interface CreateUsageEventInput {
+  tenantId: number;
+  idempotencyKey: string;
+  endpoint: string;
+  apiCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costMicroCents: number;
+  responsePayload: Record<string, unknown>;
 }

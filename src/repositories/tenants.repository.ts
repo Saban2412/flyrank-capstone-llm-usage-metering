@@ -2,7 +2,6 @@ import { TenantWithSubscription } from "../types/billing.js";
 import { Tenant } from "../types/billing.js";
 import { pool } from "../db/pool.js";
 import { PlanCode } from "../types/billing.js";
-import { NotFoundError } from "../errors/app-error.js";
 
 function mapRowToTenantWithSubscription(row: any): TenantWithSubscription {
   return {
