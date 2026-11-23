@@ -2,6 +2,7 @@ import { TenantWithSubscription } from "../types/billing.js";
 import { Tenant } from "../types/billing.js";
 import { pool } from "../db/pool.js";
 import { PlanCode } from "../types/billing.js";
+import { NotFoundError } from "../errors/app-error.js";
 
 function mapRowToTenantWithSubscription(row: any): TenantWithSubscription {
   return {
@@ -95,7 +96,7 @@ export class TenantRepository {
       const plan = planRes.rows[0];
       if (!plan) {
         await client.query("ROLLBACK");
-        throw new Error(`Plan ${data.planCode} nije pronađen.`);
+        throw new Error(`Plan ${data.planCode} is not found.`);
       }
 
       const tenantRes = await client.query(
@@ -121,6 +122,70 @@ export class TenantRepository {
       );
 
       const sub = subRes.rows[0];
+
+      await client.query("COMMIT");
+
+      return {
+        id: Number(tenant.id),
+        name: tenant.name,
+        email: tenant.email,
+        createdAt: tenant.created_at,
+        subscription: {
+          id: Number(sub.id),
+          planCode: plan.code,
+          planName: plan.name,
+          status: sub.status,
+          maxTokensPerMonth: Number(plan.max_tokens_per_month),
+          maxApiCallsPerMonth: Number(plan.max_api_calls_per_month),
+          currentPeriodStart: sub.current_period_start,
+          currentPeriodEnd: sub.current_period_end,
+        },
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  async updateSubscriptionPlan(
+    tenantId: number,
+    planCode: PlanCode,
+  ): Promise<TenantWithSubscription> {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const planRes = await client.query(
+        `SELECT * FROM plans WHERE code = $1`,
+        [planCode],
+      );
+      const plan = planRes.rows[0];
+      if (!plan) {
+        throw new Error(`Plan ${planCode} is not found.`);
+      }
+
+      const tenantRes = await client.query(
+        `SELECT * FROM tenants WHERE id = $1`,
+        [tenantId],
+      );
+      const tenant = tenantRes.rows[0];
+      if (!tenant) {
+        throw new Error(`Tenant with id: ${tenantId} is not found!`);
+      }
+
+      const updateRes = await client.query(
+        `UPDATE subscriptions
+       SET plan_id = $1, status = 'ACTIVE', updated_at = NOW()
+       WHERE tenant_id = $2
+       RETURNING *`,
+        [plan.id, tenantId],
+      );
+      const sub = updateRes.rows[0];
+      if (!sub) {
+        throw new Error("Tenant has no active subscription record!");
+      }
 
       await client.query("COMMIT");
 
