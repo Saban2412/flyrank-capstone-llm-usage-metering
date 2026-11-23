@@ -31,7 +31,7 @@ function mapRowsToTenant(row: any): Tenant {
 
 export class TenantRepository {
   async findAllTenants(): Promise<Tenant[]> {
-    const tenants = await pool.query("RETURN * FROM tenants");
+    const tenants = await pool.query("SELECT * FROM tenants");
     return tenants.rows.map(mapRowsToTenant);
   }
   async findByEmail(email: string): Promise<boolean> {
@@ -40,5 +40,12 @@ export class TenantRepository {
     ]);
     if (tenant.rows.length === 0) return false;
     return true;
+  }
+  async findById(id: number): Promise<Tenant | undefined> {
+    const tenant = await pool.query(`SELECT * FROM tenants WHERE id = $1`, [
+      id,
+    ]);
+    if (tenant.rows.length === 0) return undefined;
+    return mapRowsToTenant(tenant.rows[0]);
   }
 }

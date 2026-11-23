@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { pool } from "./db/pool.js";
 import routerBilling from "./routes/billing.routes.js";
 import { BillingController } from "./controllers/billing.controller.js";
+import { globalErrorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
 app.use(express.json());
@@ -26,4 +27,5 @@ app.get("/health/pool", async (req, res) => {
   }
 });
 app.use("/api", routerBilling);
+app.use(globalErrorHandler);
 export default app;
