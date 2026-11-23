@@ -7,6 +7,10 @@ export const idParamSchema = z.object({
     .positive({ message: "ID must be a positive number!" }),
 });
 
+export const planCodeSchema = z.object({
+  planCode: z.enum(["FREE", "PRO"]).default("FREE"),
+});
+
 export const createCustomerSchema = z.object({
   name: z
     .string({ message: "Ime mora biti string!" })

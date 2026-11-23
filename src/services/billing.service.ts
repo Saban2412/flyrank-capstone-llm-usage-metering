@@ -45,4 +45,10 @@ export class BillingService {
       );
     return result;
   }
+  async updateSubscriptionPlan(
+    tenantId: number,
+    planCode: PlanCode,
+  ): Promise<Tenant> {
+    return await this.tenantRepo.updateSubscriptionPlan(tenantId, planCode);
+  }
 }

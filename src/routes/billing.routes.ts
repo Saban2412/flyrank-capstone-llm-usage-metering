@@ -13,4 +13,7 @@ router.get("/tenants/:id", (req, res) =>
 router.post("/tenants", (req, res) =>
   controller.cretaTenantWithSubscription(req, res),
 );
+router.patch("/tenants/:id", (req, res) =>
+  controller.updateSubscriptionPlan(req, res),
+);
 export default router;

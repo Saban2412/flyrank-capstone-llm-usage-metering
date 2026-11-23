@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import {
   idParamSchema,
   createCustomerSchema,
+  planCodeSchema,
 } from "../schemas/billing.schema.js";
 
 const service = new BillingService();
@@ -35,5 +36,11 @@ export class BillingController {
       planCode,
     });
     res.status(201).json(newTenant);
+  }
+  async updateSubscriptionPlan(req: Request, res: Response): Promise<void> {
+    const { id } = idParamSchema.parse(req.params);
+    const { planCode } = planCodeSchema.parse(req.body);
+    const updatedTenant = await service.updateSubscriptionPlan(id, planCode);
+    res.status(200).json(updatedTenant);
   }
 }
