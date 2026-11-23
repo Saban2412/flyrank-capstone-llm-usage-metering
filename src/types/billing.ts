@@ -19,11 +19,17 @@ export interface TenantWithSubscription {
     planCode: PlanCode;
     planName: string;
     status: SubscriptionStatus;
-    maxTokenPerMonth: number;
+    maxTokensPerMonth: number;
     maxApiCallsPerMonth: number;
     currentPeriodStart: Date;
     currentPeriodEnd: Date;
   };
+}
+export interface Tenant {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: Date;
 }
 export interface UsageEvent {
   id: number;
