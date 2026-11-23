@@ -23,5 +23,8 @@ app.get("/health/pool", async (req, res) => {
     });
   }
 });
-
+app.get("/plans", async (req: Request, res: Response) => {
+  const podaci = await pool.query("SELECT * FROM plans");
+  res.status(200).json(podaci.rows);
+});
 export default app;
