@@ -2,7 +2,7 @@ import { BadRequestError, NotFoundError } from "../errors/app-error.js";
 import { PlansRepository } from "../repositories/plans.repository.js";
 import { Plans } from "../types/billing.js";
 
-export class BillingRepository {
+export class BillingService {
   private plansRepo = new PlansRepository();
 
   async findAllPlans(): Promise<Plans[]> {
