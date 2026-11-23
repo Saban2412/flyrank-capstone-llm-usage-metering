@@ -1,6 +1,7 @@
 import { TenantWithSubscription } from "../types/billing.js";
 import { Tenant } from "../types/billing.js";
 import { pool } from "../db/pool.js";
+import { PlanCode } from "../types/billing.js";
 
 function mapRowToTenantWithSubscription(row: any): TenantWithSubscription {
   return {
@@ -47,5 +48,108 @@ export class TenantRepository {
     ]);
     if (tenant.rows.length === 0) return undefined;
     return mapRowsToTenant(tenant.rows[0]);
+  }
+  async findByIdWithSubscription(
+    id: number,
+  ): Promise<TenantWithSubscription | undefined> {
+    const tenant = await this.findById(id);
+    if (!tenant) return undefined;
+    const TenantWithSubscription = await pool.query(
+      `
+        SELECT
+            t.id,
+            t.name,
+            t.email,
+            t.created_at,
+            s.id AS subscription_id,
+            s.status,
+            s.current_period_start,
+            s.current_period_end,
+            p.code AS plan_code,
+            p.name AS plan_name,
+            p.max_tokens_per_month,
+            p.max_api_calls_per_month
+            FROM tenants t
+            JOIN subscriptions s ON s.tenant_id = t.id
+            JOIN plans p ON p.id = s.plan_id
+            WHERE t.id = $1;
+        `,
+      [tenant.id],
+    );
+    return mapRowToTenantWithSubscription(TenantWithSubscription.rows[0]);
+  }
+  async createWithSubscription(data: {
+    name: string;
+    email: string;
+    planCode: PlanCode;
+  }): Promise<TenantWithSubscription | undefined> {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // 1. Dohvati plan preko 'client'-a
+      const planRes = await client.query(
+        `SELECT * FROM plans WHERE code = $1`,
+        [data.planCode],
+      );
+      const plan = planRes.rows[0];
+      if (!plan) {
+        await client.query("ROLLBACK");
+        throw new Error(`Plan ${data.planCode} nije pronađen.`);
+      }
+
+      // 2. Upiši tenanta preko 'client'-a
+      const tenantRes = await client.query(
+        `INSERT INTO tenants (name, email)
+       VALUES ($1, $2)
+       ON CONFLICT (email) DO NOTHING
+       RETURNING *`,
+        [data.name, data.email.toLowerCase()],
+      );
+
+      // Ako email već postoji, uredno zatvaramo transakciju prije izlaza!
+      if (tenantRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return undefined;
+      }
+
+      const tenant = tenantRes.rows[0];
+
+      // 3. Upiši pretplatu preko 'client'-a i vrati red sa RETURNING *
+      const subRes = await client.query(
+        `INSERT INTO subscriptions (tenant_id, plan_id, current_period_start, current_period_end)
+       VALUES ($1, $2, NOW(), NOW() + INTERVAL '30 days')
+       RETURNING *`,
+        [tenant.id, plan.id],
+      );
+
+      const sub = subRes.rows[0];
+
+      await client.query("COMMIT");
+
+      // 4. Vraćamo kompletan objekat koji odgovara TenantWithSubscription tipu
+      return {
+        id: Number(tenant.id),
+        name: tenant.name,
+        email: tenant.email,
+        createdAt: tenant.created_at,
+        subscription: {
+          id: Number(sub.id),
+          planCode: plan.code,
+          planName: plan.name,
+          status: sub.status,
+          maxTokensPerMonth: Number(plan.max_tokens_per_month),
+          maxApiCallsPerMonth: Number(plan.max_api_calls_per_month),
+          currentPeriodStart: sub.current_period_start,
+          currentPeriodEnd: sub.current_period_end,
+        },
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

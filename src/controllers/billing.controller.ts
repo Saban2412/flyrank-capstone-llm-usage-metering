@@ -12,9 +12,20 @@ export class BillingController {
     const tenants = await service.findAllTenants();
     res.status(200).json(tenants);
   }
-  async getTenantById(req: Request, res: Response): Promise<void> {
+  async getTenantByIdWithSubscription(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const id = Number(req.params.id);
-    const tenant = await service.findTenantById(id);
+    const tenant = await service.findTenantByIdWithSubscription(id);
     res.status(200).json(tenant);
+  }
+  async cretaTenantWithSubscription(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    const data = req.body;
+    const newTenant = await service.createTenantWithSubscription(data);
+    res.status(201).json(newTenant);
   }
 }
