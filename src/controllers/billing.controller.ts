@@ -1,5 +1,9 @@
 import { BillingService } from "../services/billing.service.js";
 import { Request, Response } from "express";
+import {
+  idParamSchema,
+  createCustomerSchema,
+} from "../schemas/billing.schema.js";
 
 const service = new BillingService();
 
@@ -16,7 +20,7 @@ export class BillingController {
     req: Request,
     res: Response,
   ): Promise<void> {
-    const id = Number(req.params.id);
+    const { id } = idParamSchema.parse(req.params);
     const tenant = await service.findTenantByIdWithSubscription(id);
     res.status(200).json(tenant);
   }
@@ -24,8 +28,12 @@ export class BillingController {
     req: Request,
     res: Response,
   ): Promise<void> {
-    const data = req.body;
-    const newTenant = await service.createTenantWithSubscription(data);
+    const { name, email, planCode } = createCustomerSchema.parse(req.body);
+    const newTenant = await service.createTenantWithSubscription({
+      name,
+      email,
+      planCode,
+    });
     res.status(201).json(newTenant);
   }
 }

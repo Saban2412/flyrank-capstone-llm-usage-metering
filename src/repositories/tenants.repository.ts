@@ -88,7 +88,6 @@ export class TenantRepository {
     try {
       await client.query("BEGIN");
 
-      // 1. Dohvati plan preko 'client'-a
       const planRes = await client.query(
         `SELECT * FROM plans WHERE code = $1`,
         [data.planCode],
@@ -99,7 +98,6 @@ export class TenantRepository {
         throw new Error(`Plan ${data.planCode} nije pronađen.`);
       }
 
-      // 2. Upiši tenanta preko 'client'-a
       const tenantRes = await client.query(
         `INSERT INTO tenants (name, email)
        VALUES ($1, $2)
@@ -108,7 +106,6 @@ export class TenantRepository {
         [data.name, data.email.toLowerCase()],
       );
 
-      // Ako email već postoji, uredno zatvaramo transakciju prije izlaza!
       if (tenantRes.rows.length === 0) {
         await client.query("ROLLBACK");
         return undefined;
@@ -116,7 +113,6 @@ export class TenantRepository {
 
       const tenant = tenantRes.rows[0];
 
-      // 3. Upiši pretplatu preko 'client'-a i vrati red sa RETURNING *
       const subRes = await client.query(
         `INSERT INTO subscriptions (tenant_id, plan_id, current_period_start, current_period_end)
        VALUES ($1, $2, NOW(), NOW() + INTERVAL '30 days')
@@ -128,7 +124,6 @@ export class TenantRepository {
 
       await client.query("COMMIT");
 
-      // 4. Vraćamo kompletan objekat koji odgovara TenantWithSubscription tipu
       return {
         id: Number(tenant.id),
         name: tenant.name,
