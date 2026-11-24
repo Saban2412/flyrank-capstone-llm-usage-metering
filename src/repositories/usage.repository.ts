@@ -13,11 +13,11 @@ function mapRowsToUsageEvent(row: any): UsageEvent {
     idempotencyKey: row.idempotency_key,
     endpoint: row.endpoint,
     apiCalls: Number(row.api_calls),
-    inputTokens: Number(row.input_token),
+    inputTokens: Number(row.input_tokens),
     cachedInputTokens: Number(row.cached_input_tokens),
     reasoningTokens: Number(row.reasoning_tokens),
     outputTokens: Number(row.output_tokens),
-    totakTokens: Number(row.total_tokens),
+    totalTokens: Number(row.total_tokens),
     costMicroCents: Number(row.cost_micro_cents),
     responsePayload: row.response_payload,
     recordedAt: row.recorded_at,
@@ -53,16 +53,18 @@ export class UsageRepository {
     periodEnd: Date,
   ): Promise<PeriodUsageSummary> {
     const usageRes = await pool.query(
-      `
-        SELECT 
-            COALESCE(SUM(api_calls),0) AS total_api_calls,
-            COALESCE(SUM(input_tokens),0) AS total_input_tokens,
-            COALESCE(SUM(cached_input_tokens),0) AS total_cached_input_tokens,
-            COALESCE(SUM(reasoning_tokens),0) AS total_reasoning_tokens,
-            COALESCE(SUM(output_tokens),0) AS total_output_tokens,
-            COALESCE(SUM(total_tokens),0) AS total_tokens,
-            COALESCE(SUM(const_micro_cents),0) AS total_cost_micro_cents
-        WHERE tenant_id = $1 AND recorded_at >=$2 AND recorded_at <=$3`,
+      `SELECT 
+      COALESCE(SUM(api_calls), 0) AS total_api_calls,
+      COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+      COALESCE(SUM(cached_input_tokens), 0) AS total_cached_input_tokens,
+      COALESCE(SUM(reasoning_tokens), 0) AS total_reasoning_tokens,
+      COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+      COALESCE(SUM(total_tokens), 0) AS total_tokens,
+      COALESCE(SUM(cost_micro_cents), 0) AS total_cost_micro_cents
+   FROM usage_events
+   WHERE tenant_id = $1
+     AND recorded_at >= $2
+     AND recorded_at < $3;`,
       [tenantId, periodStart, periodEnd],
     );
 
@@ -72,7 +74,7 @@ export class UsageRepository {
   async createEvent(data: CreateUsageEventInput): Promise<UsageEvent> {
     const result = await pool.query(
       `
-        INSERT INTO usage_event (tenant_id, idempotency_key, endpoint, api_calls, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, total_tokens, cost_micro_cents, response_payload,prompt_hash)
+        INSERT INTO usage_events (tenant_id, idempotency_key, endpoint, api_calls, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, total_tokens, cost_micro_cents, response_payload,prompt_hash)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
         ON CONFLICT (idempotency_key) DO NOTHING 
         RETURNING *`,
@@ -92,7 +94,9 @@ export class UsageRepository {
       ],
     );
     if (result.rows.length === 0) {
-      const existingEvent = await this.findByIdempotencyKey(data.idempotencyKey);
+      const existingEvent = await this.findByIdempotencyKey(
+        data.idempotencyKey,
+      );
       if (!existingEvent) {
         throw new Error("Usage event was not found after idempotency conflict");
       }

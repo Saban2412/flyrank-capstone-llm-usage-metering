@@ -46,7 +46,7 @@ export class BillingController {
     res.status(200).json(updatedTenant);
   }
   async createUsageEvent(req: Request, res: Response): Promise<void> {
-    const { id } = idParamSchema.parse(req.params);
+    const { id } = idParamSchema.parse(req.body);
     const { "idempotency-key": idempotentyKey } = idempotencyKeySchema.parse(
       req.headers,
     );

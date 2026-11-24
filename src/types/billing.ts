@@ -41,7 +41,7 @@ export interface UsageEvent {
   cachedInputTokens: number;
   reasoningTokens: number;
   outputTokens: number;
-  totakTokens: number;
+  totalTokens: number;
   costMicroCents: number;
   responsePayload: Record<string, unknown>;
   recordedAt: Date;
