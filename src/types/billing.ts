@@ -67,4 +67,5 @@ export interface CreateUsageEventInput {
   totalTokens: number;
   costMicroCents: number;
   responsePayload: Record<string, unknown>;
+  promptHash: string;
 }

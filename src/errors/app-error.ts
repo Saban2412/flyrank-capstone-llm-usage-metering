@@ -13,14 +13,24 @@ export class AppError extends Error {
 
 // Specifična greška za 404 Not Found
 export class NotFoundError extends AppError {
-  constructor(message = "Traženi resurs nije pronađen.") {
+  constructor(message = "Resource not found.") {
     super(message, 404);
   }
 }
 
 // Specifična greška za 400 Bad Request
 export class BadRequestError extends AppError {
-  constructor(message = "Neispravan zahtjev.") {
+  constructor(message = "Bad Request.") {
     super(message, 400);
+  }
+}
+export class ToManyRequestError extends AppError {
+  constructor(message = "To many requests.") {
+    super(message, 429);
+  }
+}
+export class PaymentRequiredError extends AppError {
+  constructor(message = "Payment required.") {
+    super(message, 402);
   }
 }

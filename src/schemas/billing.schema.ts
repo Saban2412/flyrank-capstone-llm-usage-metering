@@ -21,3 +21,14 @@ export const createCustomerSchema = z.object({
     .toLowerCase(),
   planCode: z.enum(["FREE", "PRO"]).default("FREE"),
 });
+export const promptSchema = z.object({
+  prompt: z
+    .string({ message: "Prompt must be string!" })
+    .trim()
+    .min(1, { message: "Prompt must contain at least 1 caracter!" })
+    .max(10000, { message: "Prompt is too long." })
+    .toLowerCase(),
+});
+export const idempotencyKeySchema = z.object({
+  idempotencyKey: z.uuid({ message: "Idempotency key must be a UUID format." }),
+});

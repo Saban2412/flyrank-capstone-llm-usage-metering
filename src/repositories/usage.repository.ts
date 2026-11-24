@@ -36,11 +36,14 @@ function mapRowsToPeriodUsageSummary(row: any): PeriodUsageSummary {
 }
 
 export class UsageRepository {
-  async findByIdempotencyKey(idempotencyKey: string): Promise<UsageEvent> {
+  async findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<UsageEvent | undefined> {
     const eventRes = await pool.query(
       `SELECT * FROM usage_events WHERE idempotency_key = $1`,
       [idempotencyKey],
     );
+    if (eventRes.rows.length === 0) return undefined;
     const event = eventRes.rows[0];
     return event;
   }
@@ -69,8 +72,8 @@ export class UsageRepository {
   async createEvent(data: CreateUsageEventInput): Promise<UsageEvent> {
     const result = await pool.query(
       `
-        INSERT INTO usage_event (tenant_id, idempotency_key, endpoint, api_calls, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, total_tokens, cost_micro_cents, response_payload)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+        INSERT INTO usage_event (tenant_id, idempotency_key, endpoint, api_calls, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, total_tokens, cost_micro_cents, response_payload,prompt_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
         ON CONFLICT (idempotency_key) DO NOTHING 
         RETURNING *`,
       [
@@ -85,10 +88,15 @@ export class UsageRepository {
         data.totalTokens,
         data.costMicroCents,
         data.responsePayload,
+        data.promptHash,
       ],
     );
     if (result.rows.length === 0) {
-      return await this.findByIdempotencyKey(data.idempotencyKey);
+      const existingEvent = await this.findByIdempotencyKey(data.idempotencyKey);
+      if (!existingEvent) {
+        throw new Error("Usage event was not found after idempotency conflict");
+      }
+      return existingEvent;
     }
     return mapRowsToUsageEvent(result.rows[0]);
   }
@@ -98,5 +106,16 @@ export class UsageRepository {
       [tenantId],
     );
     return result.rows.map(mapRowsToUsageEvent);
+  }
+  async findByPromptHash(
+    tenantId: number,
+    promptHash: string,
+  ): Promise<boolean> {
+    const result = await pool.query(
+      `SELECT * FROM usage_events WHERE tenant_id = $1 AND prompt_hash = $2`,
+      [tenantId, promptHash],
+    );
+    if (result.rows.length === 0) return false;
+    return true;
   }
 }
