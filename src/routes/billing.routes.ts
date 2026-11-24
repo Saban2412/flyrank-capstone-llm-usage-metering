@@ -17,4 +17,7 @@ router.patch("/tenants/:id", (req, res) =>
   controller.updateSubscriptionPlan(req, res),
 );
 router.post("/generate", (req, res) => controller.createUsageEvent(req, res));
+router.get("/tenants/:id/usage", (req, res) =>
+  controller.getUsageSummary(req, res),
+);
 export default router;
