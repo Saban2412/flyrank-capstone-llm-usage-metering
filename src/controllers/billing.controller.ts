@@ -58,4 +58,9 @@ export class BillingController {
     );
     res.status(201).json(usageEvent);
   }
+  async getUsageSummary(req: Request, res: Response): Promise<void> {
+    const { id: tenantId } = idParamSchema.parse(req.params);
+    const usage = await service.getPeriodUsage(tenantId);
+    res.status(200).json(usage);
+  }
 }

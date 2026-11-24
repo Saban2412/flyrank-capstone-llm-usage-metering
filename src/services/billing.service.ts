@@ -13,6 +13,8 @@ import {
   Plans,
   UsageEvent,
   Tenant,
+  PeriodUsageSummary,
+  TenantWithSubscription,
 } from "../types/billing.js";
 import { generatePromptHash } from "../utils/promptHash.js";
 import { simulateAiCompletion } from "../utils/llmSimulator.js";
@@ -30,7 +32,9 @@ export class BillingService {
     const result = await this.tenantRepo.findAllTenants();
     return result;
   }
-  async findTenantByIdWithSubscription(id: number): Promise<Tenant> {
+  async findTenantByIdWithSubscription(
+    id: number,
+  ): Promise<TenantWithSubscription> {
     const result = await this.tenantRepo.findByIdWithSubscription(id);
     if (!result) throw new NotFoundError(`Tenant with id ${id} is not found!`);
     return result;
@@ -137,5 +141,15 @@ export class BillingService {
     };
 
     return await this.usageRepo.createEvent(data);
+  }
+  async getPeriodUsage(tenantId: number): Promise<PeriodUsageSummary> {
+    const tenant: TenantWithSubscription =
+      await this.findTenantByIdWithSubscription(tenantId);
+    const usage = await this.usageRepo.getPeriodUsageSummary(
+      tenantId,
+      tenant.subscription.currentPeriodStart,
+      tenant.subscription.currentPeriodEnd,
+    );
+    return usage;
   }
 }
