@@ -30,5 +30,7 @@ export const promptSchema = z.object({
     .toLowerCase(),
 });
 export const idempotencyKeySchema = z.object({
-  idempotencyKey: z.uuid({ message: "Idempotency key must be a UUID format." }),
+  "idempotency-key": z.uuid({
+    message: "Idempotency key must be a UUID format.",
+  }),
 });

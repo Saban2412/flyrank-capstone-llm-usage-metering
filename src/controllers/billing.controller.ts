@@ -4,6 +4,8 @@ import {
   idParamSchema,
   createCustomerSchema,
   planCodeSchema,
+  idempotencyKeySchema,
+  promptSchema,
 } from "../schemas/billing.schema.js";
 
 const service = new BillingService();
@@ -42,5 +44,18 @@ export class BillingController {
     const { planCode } = planCodeSchema.parse(req.body);
     const updatedTenant = await service.updateSubscriptionPlan(id, planCode);
     res.status(200).json(updatedTenant);
+  }
+  async createUsageEvent(req: Request, res: Response): Promise<void> {
+    const { id } = idParamSchema.parse(req.params);
+    const { "idempotency-key": idempotentyKey } = idempotencyKeySchema.parse(
+      req.headers,
+    );
+    const { prompt } = promptSchema.parse(req.body);
+    const usageEvent = await service.createUsageEvent(
+      id,
+      prompt,
+      idempotentyKey,
+    );
+    res.status(201).json(usageEvent);
   }
 }
