@@ -19,7 +19,7 @@ export const createCustomerSchema = z.object({
     .string({ message: "Email mora biti string!" })
     .email({ message: "Mora biti u email formatu!" })
     .toLowerCase(),
-  planCode: z.enum(["FREE", "PRO"]).default("FREE"),
+  planCode: z.enum(["FREE"]).default("FREE"),
 });
 export const promptSchema = z.object({
   prompt: z
