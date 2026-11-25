@@ -85,6 +85,18 @@ export class StripeService {
             ? session.subscription
             : null,
       });
+    } else if (
+      event.type === "customer.subscription.deleted" ||
+      (event.type === "customer.subscription.updated" &&
+        (event.data.object as Stripe.Subscription).status === "canceled")
+    ) {
+      const subscription = event.data.object as Stripe.Subscription;
+
+      await this.tenantRepo.downgradeTenantToFreeFromWebhook({
+        stripeEventId: event.id,
+        eventType: event.type,
+        stripeSubscriptionId: subscription.id,
+      });
     }
 
     return { received: true };

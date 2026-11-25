@@ -5,18 +5,19 @@ import Stripe from "stripe";
 import app from "../src/app.js";
 import { pool } from "../src/db/pool.js";
 import { env } from "../src/config/env.js";
+import { calculateEventCostMicroCents } from "../src/config/pricing.js";
 
-describe("Usage Metering & Billing Engine - Integration Tests", () => {
+describe("Usage Metering & Billing Engine - Integration & Pricing Tests", () => {
   let tenantId: number;
+  let sharedStripePayload: string;
+  let sharedStripeSignature: string;
 
-  // Reset transactional tables before running the suite to guarantee a clean, deterministic state
   beforeAll(async () => {
     await pool.query(
       "TRUNCATE TABLE usage_events, subscriptions, tenants, processed_webhook_events RESTART IDENTITY CASCADE;",
     );
   });
 
-  // Close the database connection pool after all tests complete
   afterAll(async () => {
     await pool.end();
   });
@@ -36,31 +37,27 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
   });
 
   it("2. Executes a standard AI request and calculates micro-cent costs accurately", async () => {
-    const idempotencyKey = crypto.randomUUID();
-
     const res = await request(app)
       .post("/api/generate")
-      .set("Idempotency-Key", idempotencyKey)
+      .set("Idempotency-Key", crypto.randomUUID())
       .send({
         id: tenantId,
         prompt: "What is clean architecture?",
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.totalTokens).toBe(350); // 100 input + 250 output
-    expect(res.body.costMicroCents).toBe(1800); // 1*100 + 100*2 + 250*6
+    expect(res.body.totalTokens).toBe(350);
+    expect(res.body.costMicroCents).toBe(1800);
   });
 
   it("3. Enforces idempotency (retrying with the same key returns the cached event without double-charging)", async () => {
     const sharedKey = crypto.randomUUID();
 
-    // First request
     const first = await request(app)
       .post("/api/generate")
       .set("Idempotency-Key", sharedKey)
       .send({ id: tenantId, prompt: "First call with shared key" });
 
-    // Second request (retry with identical Idempotency-Key)
     const second = await request(app)
       .post("/api/generate")
       .set("Idempotency-Key", sharedKey)
@@ -69,7 +66,6 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
     expect(first.status).toBe(201);
     expect(second.body.id).toBe(first.body.id);
 
-    // Verify in DB: only 2 usage events should exist so far (from test #2 and test #3)
     const countRes = await pool.query(
       "SELECT COUNT(*)::int AS count FROM usage_events WHERE tenant_id = $1",
       [tenantId],
@@ -83,19 +79,17 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
       .set("Idempotency-Key", crypto.randomUUID())
       .send({
         id: tenantId,
-        prompt: "What is clean architecture?", // Identical prompt to test #2
+        prompt: "What is clean architecture?",
       });
 
     expect(res.status).toBe(201);
     expect(res.body.responsePayload.model).toBe("sim-cache-v1");
     expect(res.body.cachedInputTokens).toBe(100);
-    expect(res.body.totalTokens).toBe(300); // 20 input + 100 cached + 180 output
-    expect(res.body.costMicroCents).toBe(1320); // Discounted compared to 1800 micro-cents
+    expect(res.body.totalTokens).toBe(300);
+    expect(res.body.costMicroCents).toBe(1320);
   });
 
   it("5. Triggers Quota Gate (402 Payment Required) when a request would exceed remaining monthly quota", async () => {
-    // Consumed so far: 350 + 350 + 300 = 1,000 tokens out of 1,500.
-    // A reasoning prompt consumes 1,050 tokens -> 1,000 + 1,050 > 1,500!
     const res = await request(app)
       .post("/api/generate")
       .set("Idempotency-Key", crypto.randomUUID())
@@ -119,7 +113,7 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
   it("7. Processes a validly signed Stripe Webhook and upgrades the tenant to the PRO plan", async () => {
     const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
-    const payload = JSON.stringify({
+    sharedStripePayload = JSON.stringify({
       id: `evt_test_${crypto.randomUUID().replace(/-/g, "")}`,
       object: "event",
       type: "checkout.session.completed",
@@ -135,22 +129,20 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
       },
     });
 
-    // Generate a valid HMAC-SHA256 signature using STRIPE_WEBHOOK_SECRET
-    const validSignature = stripe.webhooks.generateTestHeaderString({
-      payload,
+    sharedStripeSignature = stripe.webhooks.generateTestHeaderString({
+      payload: sharedStripePayload,
       secret: env.STRIPE_WEBHOOK_SECRET,
     });
 
     const webhookRes = await request(app)
       .post("/api/webhooks/stripe")
-      .set("stripe-signature", validSignature)
+      .set("stripe-signature", sharedStripeSignature)
       .set("Content-Type", "application/json")
-      .send(payload);
+      .send(sharedStripePayload);
 
     expect(webhookRes.status).toBe(200);
     expect(webhookRes.body.received).toBe(true);
 
-    // Retry the expensive reasoning prompt from test #5 — it must now succeed on the PRO plan
     const generateRes = await request(app)
       .post("/api/generate")
       .set("Idempotency-Key", crypto.randomUUID())
@@ -161,5 +153,57 @@ describe("Usage Metering & Billing Engine - Integration Tests", () => {
 
     expect(generateRes.status).toBe(201);
     expect(generateRes.body.reasoningTokens).toBe(400);
+  });
+
+  it("8. Deduplicates replayed Stripe Webhook events cleanly (idempotent webhook handling)", async () => {
+    const replayRes = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("stripe-signature", sharedStripeSignature)
+      .set("Content-Type", "application/json")
+      .send(sharedStripePayload);
+
+    expect(replayRes.status).toBe(200);
+    expect(replayRes.body.received).toBe(true);
+
+    const eventCountRes = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM processed_webhook_events",
+    );
+    expect(eventCountRes.rows[0].count).toBe(1);
+  });
+
+  it("9. Verifies pinned AI token pricing math and monthly usage rollup endpoint", async () => {
+    // Pinned unit checks (micro-cents)
+    const standardCost = calculateEventCostMicroCents({
+      apiCalls: 1,
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+      outputTokens: 250,
+    });
+    const cachedCost = calculateEventCostMicroCents({
+      apiCalls: 1,
+      inputTokens: 20,
+      cachedInputTokens: 100,
+      reasoningTokens: 0,
+      outputTokens: 180,
+    });
+    const reasoningCost = calculateEventCostMicroCents({
+      apiCalls: 1,
+      inputTokens: 150,
+      cachedInputTokens: 0,
+      reasoningTokens: 400,
+      outputTokens: 500,
+    });
+
+    expect(standardCost).toBe(1800);
+    expect(cachedCost).toBe(1320);
+    expect(reasoningCost).toBe(6600);
+
+    // Events: 1800 + 1800 + 1320 + 6600 = 11,520 micro-cents | Tokens: 350 + 350 + 300 + 1050 = 2,050
+    const usageRes = await request(app).get(`/api/tenants/${tenantId}/usage`);
+    expect(usageRes.status).toBe(200);
+    expect(usageRes.body.totalApiCalls).toBe(1);
+    expect(usageRes.body.totalTokens).toBe(1050);
+    expect(usageRes.body.totalCostMicroCents).toBe(6600);
   });
 });

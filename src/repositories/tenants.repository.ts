@@ -222,8 +222,6 @@ export class TenantRepository {
 
     try {
       await client.query("BEGIN");
-
-      // 1. Idempotency zaštita za webhook
       const insertEventRes = await client.query(
         `INSERT INTO processed_webhook_events (stripe_event_id, event_type)
        VALUES ($1, $2)
@@ -237,7 +235,6 @@ export class TenantRepository {
         return { alreadyProcessed: true };
       }
 
-      // 2. Dohvati ID za PRO plan
       const planRes = await client.query<{ id: number }>(
         `SELECT id FROM plans WHERE code = 'PRO' LIMIT 1;`,
       );
@@ -262,6 +259,55 @@ export class TenantRepository {
           params.stripeSubscriptionId,
           params.tenantId,
         ],
+      );
+
+      await client.query("COMMIT");
+      return { alreadyProcessed: false };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  async downgradeTenantToFreeFromWebhook(params: {
+    stripeEventId: string;
+    eventType: string;
+    stripeSubscriptionId: string;
+  }): Promise<{ alreadyProcessed: boolean }> {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const insertEventRes = await client.query(
+        `INSERT INTO processed_webhook_events (stripe_event_id, event_type)
+       VALUES ($1, $2)
+       ON CONFLICT (stripe_event_id) DO NOTHING
+       RETURNING stripe_event_id;`,
+        [params.stripeEventId, params.eventType],
+      );
+
+      if (insertEventRes.rowCount === 0) {
+        await client.query("COMMIT");
+        return { alreadyProcessed: true };
+      }
+
+      const planRes = await client.query<{ id: number }>(
+        `SELECT id FROM plans WHERE code = 'FREE' LIMIT 1;`,
+      );
+      const freePlan = planRes.rows[0];
+      if (!freePlan) {
+        throw new Error("FREE plan not found in database.");
+      }
+
+      await client.query(
+        `UPDATE subscriptions
+       SET plan_id = $1,
+           status = 'CANCELED',
+           stripe_subscription_id = NULL
+       WHERE stripe_subscription_id = $2;`,
+        [freePlan.id, params.stripeSubscriptionId],
       );
 
       await client.query("COMMIT");
