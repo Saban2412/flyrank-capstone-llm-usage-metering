@@ -1,0 +1,23 @@
+name: flyrank-capstone-metering-billing
+track: backend
+difficulty: medium
+language: typescript
+runtime: node22
+
+run: docker compose up -d
+seed: docker compose exec -T api npm run migrate
+test: npm test
+
+base_url: http://localhost:3000
+
+endpoints:
+  create_tenant: POST /api/tenants
+  get_tenants: GET /api/tenants
+  get_tenant_with_subscription details: GET /api/tenants/:id
+  meter_generate: POST /api/generate
+  usage_rollup: GET /api/tenants/:id/usage
+
+  get_plans: GET api/plans
+
+  stripe_checkout: POST /api/billing/checkout
+  stripe_webhook: POST /api/webhooks/stripe

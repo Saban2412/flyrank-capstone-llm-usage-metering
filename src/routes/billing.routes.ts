@@ -13,9 +13,6 @@ router.get("/tenants/:id", (req, res) =>
 router.post("/tenants", (req, res) =>
   controller.cretaTenantWithSubscription(req, res),
 );
-router.patch("/tenants/:id", (req, res) =>
-  controller.updateSubscriptionPlan(req, res),
-);
 router.post("/generate", (req, res) => controller.createUsageEvent(req, res));
 router.get("/tenants/:id/usage", (req, res) =>
   controller.getUsageSummary(req, res),
