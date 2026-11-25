@@ -4,8 +4,23 @@ import { pool } from "./db/pool.js";
 import routerBilling from "./routes/billing.routes.js";
 import { BillingController } from "./controllers/billing.controller.js";
 import { globalErrorHandler } from "./middlewares/error.middleware.js";
+import { StripeService } from "./services/stripe.service.js";
+import { StripeController } from "./controllers/stripe.controller.js";
+import { createBillingRouter } from "./routes/stripe.routes.js";
+import { TenantRepository } from "./repositories/tenants.repository.js";
 
 const app = express();
+
+const tenantRepo = new TenantRepository();
+const stripeService = new StripeService(tenantRepo);
+const stripeController = new StripeController(stripeService);
+
+app.post(
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  stripeController.handleWebhook,
+);
+
 app.use(express.json());
 
 app.get("/health", (req: Request, res: Response) => {
@@ -26,6 +41,7 @@ app.get("/health/pool", async (req, res) => {
     });
   }
 });
+app.use("/api/billing", createBillingRouter(stripeController));
 app.use("/api", routerBilling);
 app.use(globalErrorHandler);
 export default app;
