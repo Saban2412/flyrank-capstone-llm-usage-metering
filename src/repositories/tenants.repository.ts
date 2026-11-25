@@ -211,4 +211,66 @@ export class TenantRepository {
       client.release();
     }
   }
+  async upgradeTenantFromStripeWebhook(params: {
+    stripeEventId: string;
+    eventType: string;
+    tenantId: number;
+    stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
+  }): Promise<{ alreadyProcessed: boolean }> {
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // 1. Idempotency zaštita za webhook
+      const insertEventRes = await client.query(
+        `INSERT INTO processed_webhook_events (stripe_event_id, event_type)
+       VALUES ($1, $2)
+       ON CONFLICT (stripe_event_id) DO NOTHING
+       RETURNING stripe_event_id;`,
+        [params.stripeEventId, params.eventType],
+      );
+
+      if (insertEventRes.rowCount === 0) {
+        await client.query("COMMIT");
+        return { alreadyProcessed: true };
+      }
+
+      // 2. Dohvati ID za PRO plan
+      const planRes = await client.query<{ id: number }>(
+        `SELECT id FROM plans WHERE code = 'PRO' LIMIT 1;`,
+      );
+      const plan = planRes.rows[0];
+      if (!plan) {
+        throw new Error("PRO plan not found in database.");
+      }
+
+      // 3. Ažuriraj pretplatu tenanta
+      await client.query(
+        `UPDATE subscriptions
+       SET plan_id = $1,
+           status = 'ACTIVE',
+           stripe_customer_id = COALESCE($2, stripe_customer_id),
+           stripe_subscription_id = COALESCE($3, stripe_subscription_id),
+           current_period_start = NOW(),
+           current_period_end = NOW() + INTERVAL '30 days'
+       WHERE tenant_id = $4;`,
+        [
+          plan.id,
+          params.stripeCustomerId,
+          params.stripeSubscriptionId,
+          params.tenantId,
+        ],
+      );
+
+      await client.query("COMMIT");
+      return { alreadyProcessed: false };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }

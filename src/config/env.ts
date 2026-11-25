@@ -14,7 +14,7 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().startsWith("sk_test_"),
   STRIPE_PRO_PRICE_ID: z.string().startsWith("price_"),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
-  APP_BASE_URL: z.string().url().default("http://localhost:3000"),
+  APP_BASE_URL: z.url().default("http://localhost:3000"),
 });
 
 export const env = envSchema.parse(process.env);
