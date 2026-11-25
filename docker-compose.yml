@@ -1,21 +1,61 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: LLM_billing_postgres
+    container_name: metering_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-metering_db}
     ports:
-      - "${DB_PORT}:5432"
+      - "5436:5432" # Lijevo 5436 za Windows (slobodan port), desno 5432 interno u kontejneru!
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-metering_db}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: .
+      target: development
+    container_name: metering_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Unutar Docker mreže "api" kontejner gađa interni port 5432 od "postgres" kontejnera:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-metering_db}
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run migrate && npm run dev"
+
+  stripe-cli:
+    image: stripe/stripe-cli:latest
+    container_name: metering_stripe_cli
+    volumes:
+      - ./.stripe-config:/root/.config/stripe
+    depends_on:
+      - api
+    command: >
+      listen
+      --events checkout.session.completed
+      --forward-to http://api:3000/api/webhooks/stripe
+    tty: true
 
 volumes:
   postgres_data:
