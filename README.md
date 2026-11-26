@@ -106,8 +106,171 @@ All monetary values are stored as `BIGINT` micro-cents (`$1.00 = 1,000,000 micro
 
 ---
 
+## Usage Examples
+
+### 1. Create a Tenant (`FREE` Plan)
+
+```bash
+curl -X POST http://localhost:3000/api/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Corp",
+    "email": "billing@acme.test"
+  }'
+```
+
+#### Sample Response (200 OK):
+
+```JSON
+{
+    "id": 2,
+    "name": "Acme Corp",
+    "email": "billing@acme.test",
+    "createdAt": "2026-11-26T15:58:57.553Z",
+    "subscription": {
+        "id": 2,
+        "planCode": "FREE",
+        "planName": "Free Tier",
+        "status": "ACTIVE",
+        "maxTokensPerMonth": 1500,
+        "maxApiCallsPerMonth": 10,
+        "currentPeriodStart": "2026-11-26T15:58:57.553Z",
+        "currentPeriodEnd": "2026-12-26T15:58:57.553Z"
+    }
+}
+```
+
+### Meter a Billable Generation Request (with Idempotency Key)
+
+```bash
+curl -X POST http://localhost:3000/api/generate \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 22222222-2222-4222-8222-222222222226" \
+  -d '{
+    "id": "TENANT_UUID_HERE",
+    "prompt": "Summarize the quarterly financial report."
+  }'
+```
+
+#### Sample Response (200 OK):
+
+```JSON
+{
+    "id": 5,
+    "tenantId": 2,
+    "idempotencyKey": "22222222-2222-4222-8222-222222222226",
+    "endpoint": "POST /api/generate",
+    "apiCalls": 1,
+    "inputTokens": 100,
+    "cachedInputTokens": 0,
+    "reasoningTokens": 0,
+    "outputTokens": 250,
+    "totalTokens": 350,
+    "costMicroCents": 1800,
+    "responsePayload": {
+        "model": "sim-standard-v1",
+        "answer": "[STANDARD RESPONSE] this is a standard LLM answer."
+    },
+    "recordedAt": "2026-11-26T16:01:51.461Z"
+}
+```
+
+### Exceed remaining monthly quota (by sending more requests)
+
+#### Sample Response (402 Payment Required):
+
+```JSON
+{
+    "error": "Request exceeds remaining monthly quota. Upgrade to PRO!"
+}
+```
+
+### Upgrade to pro
+
+```bash
+curl -X POST http://localhost:3000/api/billing/checkout \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "YOUR_TENANT_ID"
+  }'
+```
+
+You should recieve 201 Created with following response:
+
+```JSON
+"checkoutUrl": "GENERATED_CHECKOUT_URL",
+"sessionId": "GENERATED_SESSION_UUID"
+```
+
+Follow the checkoutUrl into your browser and login with your stripe account. After you successfuly logged in to your stripe account enter test bank account number. For Example:
+
+```text
+VISA TEST CARD NUMBER: 4242 4242 4242 4242
+MM/YY: 06/27
+SECURITY CODE: 123
+NAME ON CARD: Test User
+```
+
+After successfull session you should be redirected to http://localhost:3000/api/billing/success with a following body:
+
+```JSON
+{
+  "message": "Payment successful! Your PRO plan is being activated via webhook.",
+  "sessionId": "GENERATED_SESSION_UUID"
+}
+```
+
+Go back to your terminal and confirm if your tenant is upgraded to PRO plan:
+
+```bash
+curl -X GET http://localhost:3000/api/tenants/YOUR_TENANT_ID
+```
+
+#### Sample Response (200 OK):
+
+```JSON
+{
+    "id": 2,
+    "name": "Acme Corp",
+    "email": "billing@acme.test",
+    "createdAt": "2026-11-26T15:58:57.553Z",
+    "subscription": {
+        "id": 2,
+        "planCode": "PRO",
+        "planName": "Pro Tier",
+        "status": "ACTIVE",
+        "maxTokensPerMonth": 1000000,
+        "maxApiCallsPerMonth": 10000,
+        "currentPeriodStart": "2026-11-26T16:39:36.220Z",
+        "currentPeriodEnd": "2026-12-26T16:39:36.220Z"
+    }
+}
+```
+
+---
+
+## Evaluation & Test Suite Results
+
+The system was verified against an automated Vitest + Supertest integration suite (npm test) covering financial accuracy, concurrency retries, and quota boundaries:
+
+| Evaluation Scenario                       | Expected Behavior                                                               | v2 Result                     |
+| :---------------------------------------- | :------------------------------------------------------------------------------ | :---------------------------- |
+| Network Retry / Duplicate Idempotency-Key | Returns cached response without double-charging or incrementing usage           | Pass (100% deduplicated)      |
+| Exact Quota Boundary (FREE -> PRO limits) | Allows requests up to exact limit; blocks next request with 402 / 429           | Pass (0 boundary leaks)       |
+| Integer Micro-Cent Pricing Math           | Exact BIGINT calculation across fresh, cached (50% off), and reasoning tokens   | Pass (0 floating-point drift) |
+| SHA-256 Prompt Cache Hit                  | Identical tenant prompt hits cache and bills input tokens at 1 micro-cent/token | Pass                          |
+| Stripe Webhook Signature Verification     | Rejects tampered payloads; upgrades tenant plan atomically on valid HMAC-SHA256 | Pass                          |
+
+---
+
 ## Honest Limitations & Non-Goals
 
 - **No Invoicing or Overage Billing:** Requests exceeding the plan quota are strictly blocked (`402 Payment Required` / `429 Too Many Requests`) rather than billed as pay-as-you-go overages.
 - **No Mid-Cycle Proration:** Upgrading from `FREE` to `PRO` immediately resets the 30-day billing window (`current_period_start = NOW()`) rather than calculating partial-month credits.
 - **Deterministic LLM Simulator:** Token counts are deterministically generated based on prompt keywords and SHA-256 cache hits rather than calling an external paid LLM API.
+
+---
+
+## AI Transparency Note
+
+This project was built in collaboration with Claude and Gemini AI for architectural brainstorming, TypeScript/Express boilerplate scaffolding, SQL migration drafting, and Vitest edge-case generation. All financial business rules, integer micro-cent calculations, idempotency database constraints, and Stripe HMAC-SHA256 webhook verification paths were manually reviewed, tested, and verified by me.
